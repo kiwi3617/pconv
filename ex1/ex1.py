@@ -16,7 +16,12 @@ num_threads = 1
 def main():
     input, target = load_data()
 
+    tf.summary.histogram(name='source_img', values=input)
+    tf.summary.histogram(name='target_img', values=target)
+
     model = create_graph(input)
+
+    tf.summary.histogram(name='model', values=model)
 
     run(model, target, input)
 
@@ -30,8 +35,8 @@ def load_data():
     num_channel = 1
     # are used to feed data into our queue
 
-    path = "./dataset/source(48)"
-    path2 = "./dataset/dilate1_5(48)"
+    path = '../dataset/source(48)'
+    path2 = '../dataset/dilate1_5(48)'
     file_list = os.listdir(path)
     file_list2 = os.listdir(path2)
     file_list = [os.path.join(path, filename) for filename in file_list]
@@ -56,6 +61,8 @@ def load_data():
         , batched, dtype=tf.float32)
     img.set_shape([batch_size, 2, None, None, num_channel])
 
+    tf.summary.histogram(name='batch_img', values=img)
+
     return img[:, 0], img[:, 1]
 
 
@@ -65,19 +72,24 @@ def create_graph(input):
 
 
 def run(output, target, input):
-
     global_step = tf.Variable(0, trainable=False)
     starter_learning_rate = learning_rate
     learning_rate_ = tf.train.exponential_decay(starter_learning_rate, global_step,
-                                                1000, 0.96, staircase=True) #97
+                                                1000, 0.96, staircase=True)  # 97
 
+    tf.summary.scalar(name='decay_learning_rate', tensor=learning_rate_)
     loss = tf.reduce_mean(tf.squared_difference(output, target))
-    #loss = tf.nn.l2_loss(tf.subtract(output, target))
-    #loss = tf.reduce_mean(tf.abs(target - output))
+    # loss = tf.nn.l2_loss(tf.subtract(output, target))
+    # loss = tf.reduce_mean(tf.abs(target - output))
+
+
 
     optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate_)
     train = optimizer.minimize(loss, global_step=global_step)
     gradient = optimizer.compute_gradients(loss)
+
+    tf.summary.scalar(name='loss', tensor=loss)
+
     init = tf.global_variables_initializer()
 
     with tf.Session() as sess:
@@ -93,11 +105,10 @@ def run(output, target, input):
             print(sess.run(loss))
             pass
 
-        for step in range(20000):
+        for step in range(200):
             sess.run(train)
 
             if (step + 1) % 100 == 0:
-
                 with tf.variable_scope("test", reuse=True):
                     print(sess.run(tf.get_variable("filter")))
                     print(sess.run(tf.get_variable("p")))
@@ -119,9 +130,18 @@ def run(output, target, input):
 
         print(sess.run(learning_rate_))
         print(out[0, :, :, :].shape)
-        Image.fromarray(np.repeat(in_[0, :, :, :], 3, 2)).show() #channels = 3
-        Image.fromarray(np.repeat(tar[0, :, :, :], 3, 2)).show()
-        Image.fromarray(np.repeat(out[0, :, :, :], 3, 2)).show()
+        # Image.fromarray(np.repeat(in_[0, :, :, :], 3, 2)).show() #channels = 3
+        # Image.fromarray(np.repeat(tar[0, :, :, :], 3, 2)).show()
+        # Image.fromarray(np.repeat(out[0, :, :, :], 3, 2)).show()
+
+        tf.summary.histogram('in_', values=in_)
+        tf.summary.histogram('tar', values=tar)
+        tf.summary.histogram('out', values=out)
+
+        merged = tf.summary.merge_all()
+        train_writer = tf.summary.FileWriter(logdir='./board/sample1', graph=sess.graph)
+        result = sess.run([merged])
+        train_writer.add_summary(result[0])
 
         coord.request_stop()
         coord.join(threads)
@@ -130,9 +150,10 @@ def run(output, target, input):
 
 
 def save():
-    #TODO
+    # TODO
     return
 
 
 if __name__ == '__main__':
     main()
+
