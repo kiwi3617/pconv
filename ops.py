@@ -1,3 +1,5 @@
+
+
 import tensorflow as tf
 import numpy as np
 
@@ -37,6 +39,10 @@ def pconv(batch_input, out_channels, stride, filter_size=4, name="pconv"):
         p = tf.get_variable("p", [], dtype=tf.float32, trainable=True,
                             initializer=tf.random_normal_initializer(0, 0.02))
 
+        tf.summary.scalar(name='p', tensor=p)
+        tf.summary.histogram(name='filter',values=filter)
+
+
         batch_input = batch_input+eps
 
         powered1 = tf.pow(batch_input, p + 1) # 0^-1 !!!
@@ -46,6 +52,10 @@ def pconv(batch_input, out_channels, stride, filter_size=4, name="pconv"):
         conv2 = tf.nn.conv2d(powered2, filter, strides, padding="SAME")
 
         divided = tf.divide(conv1, conv2 + eps)
+
+        tf.summary.histogram(name='powered1', values=powered1)
+        tf.summary.histogram(name='powered2', values=powered2)
+        tf.summary.histogram(name='divided', values=divided)
 
         return divided
 
@@ -66,9 +76,18 @@ def sconv(batch_input, out_channels, stride, filter_size=4, name="sconv"):
         p = tf.get_variable("p", [], dtype=tf.float32, trainable=True,
                             initializer=tf.random_normal_initializer(6, 0.00))
 
+        tf.summary.scalar(name='p', tensor=p)
+        tf.summary.histogram(name='filter',values=filter)
+
+
         multiplied = tf.multiply(p, batch_input)
         powered = tf.exp(multiplied)
         multipled_powered_input = tf.multiply(batch_input, powered)
+
+
+        tf.summary.histogram(name='multiplied',values=multiplied)
+        tf.summary.histogram(name='powered', values=powered)
+        tf.summary.histogram(name='multiplied_powered_input', values=multipled_powered_input)
 
         conv1 = tf.nn.conv2d(multipled_powered_input, filter, strides, padding="SAME")
         conv2 = tf.nn.conv2d(powered, filter, strides, padding="SAME")
@@ -92,6 +111,9 @@ def lseconv(batch_input, out_channels, stride, filter_size=4, name="lseconv"):
         p = tf.get_variable("p", [], dtype=tf.float32, trainable=True,
                             initializer=tf.random_normal_initializer(10, 0.00))
 
+        tf.summary.scalar(name='p', tensor=p)
+        tf.summary.histogram(name='filter',values=filter)
+
         multiplied = tf.multiply(batch_input, p)
         exp = tf.exp(multiplied)
         filter = filter / (tf.reduce_sum(filter) + eps)
@@ -99,6 +121,10 @@ def lseconv(batch_input, out_channels, stride, filter_size=4, name="lseconv"):
         log = tf.log(conv)
         # average = tf.nn.avg_pool(log, [1, filter_size, filter_size, 1], strides, padding="SAME")
         divided = tf.divide(log, p)  # 1/0 !!!
+
+        tf.summary.histogram(name='multiplied', values=multiplied)
+        tf.summary.histogram(name='exp', values=exp)
+        tf.summary.histogram(name='divided', values=divided)
 
         return divided
 
@@ -120,10 +146,18 @@ def gconv(batch_input, out_channels, stride, filter_size=4, name="gconv"):
                             initializer=tf.random_normal_initializer(1, 0.00)
                             )
 
+        tf.summary.scalar(name='p', tensor=p)
+        tf.summary.histogram(name='filter',values=filter)
+
+
+
         powered = tf.pow(batch_input, p)
         filter = filter / (tf.reduce_sum(filter) + eps)  # sum(filter) == 1
         conv = tf.nn.conv2d(powered, filter, strides, padding="SAME")
         gconv = tf.pow(conv, 1 / p)  # 1/0 !!!
+
+        tf.summary.histogram(name='powered', values=powered)
+        tf.summary.histogram(name='gconv', values=gconv)
 
         # tf.cond(tf.equal(p, 0),, powered_average)
 
