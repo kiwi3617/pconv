@@ -14,14 +14,16 @@ num_threads = 1
 
 
 def main():
+
+#    with tf.name_scope('load_data'):
     input, target = load_data()
 
-    tf.summary.histogram(name='source_img', values=input)
-    tf.summary.histogram(name='target_img', values=target)
+    tf.summary.histogram(name='source_histo', values=input)
+    tf.summary.histogram(name='target_histo', values=target)
 
     model = create_graph(input)
 
-    tf.summary.histogram(name='model', values=model)
+    tf.summary.histogram(name='model_histo', values=model)
 
     run(model, target, input)
 
@@ -42,53 +44,61 @@ def load_data():
     file_list = [os.path.join(path, filename) for filename in file_list]
     file_list2 = [os.path.join(path2, filename) for filename in file_list2]
 
-    filename_queue = tf.train.string_input_producer(file_list, shuffle=False)  # list of files to read
-    filename_queue2 = tf.train.string_input_producer(file_list2, shuffle=False)  # list of files to read
+    with tf.name_scope('push_source'):
+        filename_queue = tf.train.string_input_producer(file_list, shuffle=False)  # list of files to read
+        dequeue_op = filename_queue.dequeue()
+    with tf.name_scope('push_target'):
+        filename_queue2 = tf.train.string_input_producer(file_list2, shuffle=False)  # list of files to read
+        dequeue_op2 = filename_queue2.dequeue()
 
-    dequeue_op = filename_queue.dequeue()
-    dequeue_op2 = filename_queue2.dequeue()
+    with tf.name_scope('stack_proc'):
+        stacked = tf.stack([dequeue_op, dequeue_op2], axis=0)
 
-    stacked = tf.stack([dequeue_op, dequeue_op2], axis=0)
+    with tf.name_scope('batch_proc'):
+        batched = tf.train.batch([stacked],
+                                 batch_size=batch_size, num_threads=1,
+                                 capacity=batch_size * 4)
+    with tf.name_scope('return_each'):
+        img = tf.map_fn(
+            lambda input:
+            tf.stack([tf.image.convert_image_dtype(tf.image.decode_png(tf.read_file(input[0])), tf.float32),
+                      tf.image.convert_image_dtype(tf.image.decode_png(tf.read_file(input[1])), tf.float32)])
+            , batched, dtype=tf.float32,name='__source_target__')
+        img.set_shape([batch_size, 2, None, None, num_channel])
 
-    batched = tf.train.batch([stacked],
-                             batch_size=batch_size, num_threads=1,
-                             capacity=batch_size * 4)
-
-    img = tf.map_fn(
-        lambda input:
-        tf.stack([tf.image.convert_image_dtype(tf.image.decode_png(tf.read_file(input[0])), tf.float32),
-                  tf.image.convert_image_dtype(tf.image.decode_png(tf.read_file(input[1])), tf.float32)])
-        , batched, dtype=tf.float32)
-    img.set_shape([batch_size, 2, None, None, num_channel])
-
-    tf.summary.histogram(name='batch_img', values=img)
+    #tf.summary.histogram(name='batch_img', values=img)
 
     return img[:, 0], img[:, 1]
 
 
 def create_graph(input):
-    a = pconv(input, 1, 1, 5, name="test")
+    a = pconv(input, 1, 1, 5, name="Main_Graph")
     return a
 
 
 def run(output, target, input):
     global_step = tf.Variable(0, trainable=False)
-    starter_learning_rate = learning_rate
-    learning_rate_ = tf.train.exponential_decay(starter_learning_rate, global_step,
-                                                1000, 0.96, staircase=True)  # 97
+
+    with tf.name_scope('learning_rate'):
+        starter_learning_rate = learning_rate
+        learning_rate_ = tf.train.exponential_decay(starter_learning_rate, global_step,
+                                                    1000, 0.96, staircase=True,name='decay_learning_rate')  # 97
 
     tf.summary.scalar(name='decay_learning_rate', tensor=learning_rate_)
-    loss = tf.reduce_mean(tf.squared_difference(output, target))
-    # loss = tf.nn.l2_loss(tf.subtract(output, target))
-    # loss = tf.reduce_mean(tf.abs(target - output))
+
+    with tf.name_scope('cost_function'):
+        loss = tf.reduce_mean(tf.squared_difference(output, target,name='sqr_diff'),name='mse')
+        # loss = tf.nn.l2_loss(tf.subtract(output, target))
+        # loss = tf.reduce_mean(tf.abs(target - output))
 
 
+    with tf.name_scope('train'):
+        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate_)
 
-    optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate_)
     train = optimizer.minimize(loss, global_step=global_step)
-    gradient = optimizer.compute_gradients(loss)
-
+    #gradient = optimizer.compute_gradients(loss)
     tf.summary.scalar(name='loss', tensor=loss)
+
 
     init = tf.global_variables_initializer()
 
@@ -99,7 +109,7 @@ def run(output, target, input):
 
         sess.run(init)
 
-        with tf.variable_scope("test", reuse=True):
+        with tf.variable_scope("Main_Graph", reuse=True):
             print(sess.run(tf.get_variable("filter")))
             print(sess.run(tf.get_variable("p")))
             print(sess.run(loss))
@@ -109,21 +119,22 @@ def run(output, target, input):
             sess.run(train)
 
             if (step + 1) % 100 == 0:
-                with tf.variable_scope("test", reuse=True):
+                with tf.variable_scope("Main_Graph", reuse=True):
                     print(sess.run(tf.get_variable("filter")))
                     print(sess.run(tf.get_variable("p")))
                     pass
 
                 l = sess.run(loss)
                 print(step + 1, l)
-
                 pass
 
-        in_, tar, out = sess.run(
-            [tf.image.convert_image_dtype(input, tf.uint8), tf.image.convert_image_dtype(target, tf.uint8),
-             tf.image.convert_image_dtype(output, tf.uint8)])  # 반드시 한번에 돌릴것
 
-        with tf.variable_scope("test", reuse=True):
+        in_, tar, out = sess.run(
+            [tf.image.convert_image_dtype(input, tf.uint8,name='source_img'),
+            tf.image.convert_image_dtype(target, tf.uint8,name='target_img'),
+            tf.image.convert_image_dtype(output, tf.uint8,name='output_img')])  # 반드시 한번에 돌릴것
+
+        with tf.variable_scope("Main_Graph", reuse=True):
             print(sess.run(tf.get_variable("filter")))
             print(sess.run(tf.get_variable("p")))
             pass
@@ -139,7 +150,7 @@ def run(output, target, input):
         tf.summary.histogram('out', values=out)
 
         merged = tf.summary.merge_all()
-        train_writer = tf.summary.FileWriter(logdir='./board/sample1', graph=sess.graph)
+        train_writer = tf.summary.FileWriter(logdir='./board/sample2', graph=sess.graph)
         result = sess.run([merged])
         train_writer.add_summary(result[0])
 

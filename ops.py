@@ -25,39 +25,40 @@ def conv(batch_input, out_channels, stride, filter_size=4, name="conv"):
 
 def pconv(batch_input, out_channels, stride, filter_size=4, name="pconv"):
     with tf.variable_scope(name):
-        # [batch, in_height, in_width, in_channels], [filter_width, filter_height, in_channels, out_channels]
-        #     => [batch, out_height, out_width, out_channels]
+        with tf.name_scope('pconv_layer'):
+            # [batch, in_height, in_width, in_channels], [filter_width, filter_height, in_channels, out_channels]
+            #     => [batch, out_height, out_width, out_channels]
 
-        in_channels = batch_input.get_shape()[3]
-        strides = [1, stride, stride, 1]
-        eps = tf.constant(1.0E-7, dtype=tf.float32)
+            in_channels = batch_input.get_shape()[3]
+            strides = [1, stride, stride, 1]
+            eps = tf.constant(1.0E-7, dtype=tf.float32)
 
-        filter = tf.get_variable("filter", [filter_size, filter_size, in_channels, out_channels], dtype=tf.float32,
-                                 trainable=False,
-                                 initializer=tf.random_uniform_initializer(0, 1))
-                                 # initializer=tf.constant_initializer(np.diag(np.ones(5))))
-        p = tf.get_variable("p", [], dtype=tf.float32, trainable=True,
-                            initializer=tf.random_normal_initializer(0, 0.02))
+            filter = tf.get_variable("filter", [filter_size, filter_size, in_channels, out_channels], dtype=tf.float32,
+                                     trainable=False,
+                                     initializer=tf.random_uniform_initializer(0, 1))
+                                     # initializer=tf.constant_initializer(np.diag(np.ones(5))))
+            p = tf.get_variable("p", [], dtype=tf.float32, trainable=True,
+                                initializer=tf.random_normal_initializer(0, 0.02))
 
-        tf.summary.scalar(name='p', tensor=p)
-        tf.summary.histogram(name='filter',values=filter)
+            tf.summary.scalar(name='p', tensor=p)
+            tf.summary.histogram(name='filter',values=filter)
 
 
-        batch_input = batch_input+eps
+            batch_input = batch_input+eps
 
-        powered1 = tf.pow(batch_input, p + 1) # 0^-1 !!!
-        powered2 = tf.pow(batch_input, p)
+            powered1 = tf.pow(batch_input, p + 1,name='batch_p1') # 0^-1 !!!
+            powered2 = tf.pow(batch_input, p,name='batch_p0')
 
-        conv1 = tf.nn.conv2d(powered1, filter, strides, padding="SAME")
-        conv2 = tf.nn.conv2d(powered2, filter, strides, padding="SAME")
+            conv1 = tf.nn.conv2d(powered1, filter, strides, padding="SAME",name='conv1')
+            conv2 = tf.nn.conv2d(powered2, filter, strides, padding="SAME",name='conv2')
 
-        divided = tf.divide(conv1, conv2 + eps)
+            divided = tf.divide(conv1, conv2 + eps,name='divide_layer')
 
-        tf.summary.histogram(name='powered1', values=powered1)
-        tf.summary.histogram(name='powered2', values=powered2)
-        tf.summary.histogram(name='divided', values=divided)
+            tf.summary.histogram(name='powered1', values=powered1)
+            tf.summary.histogram(name='powered2', values=powered2)
+            tf.summary.histogram(name='divided', values=divided)
 
-        return divided
+    return divided
 
 
 def sconv(batch_input, out_channels, stride, filter_size=4, name="sconv"):
