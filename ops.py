@@ -8,17 +8,18 @@ eps = tf.constant(1.0E-12, dtype=tf.float32)
 
 def conv(batch_input, out_channels, stride, filter_size=4, name="conv"):
     with tf.variable_scope(name):
-        # [batch, in_height, in_width, in_channels], [filter_width, filter_height, in_channels, out_channels]
-        #     => [batch, out_height, out_width, out_channels]
+        with tf.name_scope('conv_layer'):
+            # [batch, in_height, in_width, in_channels], [filter_width, filter_height, in_channels, out_channels]
+            #     => [batch, out_height, out_width, out_channels]
 
-        in_channels = batch_input.get_shape()[3]
+            in_channels = batch_input.get_shape()[3]
 
-        filter = tf.get_variable("filter", [filter_size, filter_size, in_channels, out_channels], dtype=tf.float32,
-                                 initializer=tf.random_normal_initializer(0, 0.02))
+            filter = tf.get_variable("filter", [filter_size, filter_size, in_channels, out_channels], dtype=tf.float32,
+                                     initializer=tf.random_normal_initializer(0, 0.02))
 
-        padded_input = tf.pad(batch_input, [[0, 0], [1, 1], [1, 1], [0, 0]], mode="CONSTANT")
+            padded_input = tf.pad(batch_input, [[0, 0], [1, 1], [1, 1], [0, 0]], mode="CONSTANT")
 
-        conv = tf.nn.conv2d(padded_input, filter, [1, stride, stride, 1], padding="VALID")
+            conv = tf.nn.conv2d(padded_input, filter, [1, stride, stride, 1], padding="VALID")
 
         return conv
 
@@ -63,36 +64,37 @@ def pconv(batch_input, out_channels, stride, filter_size=4, name="pconv"):
 
 def sconv(batch_input, out_channels, stride, filter_size=4, name="sconv"):
     with tf.variable_scope(name):
-        # [batch, in_height, in_width, in_channels], [filter_width, filter_height, in_channels, out_channels]
-        #     => [batch, out_height, out_width, out_channels]
+        with tf.name_scope('sconv_layer'):
+            # [batch, in_height, in_width, in_channels], [filter_width, filter_height, in_channels, out_channels]
+            #     => [batch, out_height, out_width, out_channels]
 
-        in_channels = batch_input.get_shape()[3]
-        strides = [1, stride, stride, 1]
+            in_channels = batch_input.get_shape()[3]
+            strides = [1, stride, stride, 1]
 
-        filter = tf.get_variable("filter", [filter_size, filter_size, in_channels, out_channels], dtype=tf.float32,
-                                 trainable=True,
-                                 # initializer=tf.random_normal_initializer(0.5, 0))
-                                 # initializer = tf.random_uniform_initializer(0.0, 0.0))
-                                 initializer=tf.constant_initializer(np.diag(np.ones(5))))
-        p = tf.get_variable("p", [], dtype=tf.float32, trainable=True,
-                            initializer=tf.random_normal_initializer(6, 0.00))
+            filter = tf.get_variable("filter", [filter_size, filter_size, in_channels, out_channels], dtype=tf.float32,
+                                     trainable=True,
+                                     # initializer=tf.random_normal_initializer(0.5, 0))
+                                     # initializer = tf.random_uniform_initializer(0.0, 0.0))
+                                     initializer=tf.constant_initializer(np.diag(np.ones(5))))
+            p = tf.get_variable("p", [], dtype=tf.float32, trainable=True,
+                                initializer=tf.random_normal_initializer(6, 0.00))
 
-        tf.summary.scalar(name='p', tensor=p)
-        tf.summary.histogram(name='filter',values=filter)
-
-
-        multiplied = tf.multiply(p, batch_input)
-        powered = tf.exp(multiplied)
-        multipled_powered_input = tf.multiply(batch_input, powered)
+            tf.summary.scalar(name='p', tensor=p)
+            tf.summary.histogram(name='filter',values=filter)
 
 
-        tf.summary.histogram(name='multiplied',values=multiplied)
-        tf.summary.histogram(name='powered', values=powered)
-        tf.summary.histogram(name='multiplied_powered_input', values=multipled_powered_input)
+            multiplied = tf.multiply(p, batch_input)
+            powered = tf.exp(multiplied)
+            multipled_powered_input = tf.multiply(batch_input, powered)
 
-        conv1 = tf.nn.conv2d(multipled_powered_input, filter, strides, padding="SAME")
-        conv2 = tf.nn.conv2d(powered, filter, strides, padding="SAME")
-        divided = tf.divide(conv1, conv2 + eps)
+
+            tf.summary.histogram(name='multiplied',values=multiplied)
+            tf.summary.histogram(name='powered', values=powered)
+            tf.summary.histogram(name='multiplied_powered_input', values=multipled_powered_input)
+
+            conv1 = tf.nn.conv2d(multipled_powered_input, filter, strides, padding="SAME")
+            conv2 = tf.nn.conv2d(powered, filter, strides, padding="SAME")
+            divided = tf.divide(conv1, conv2 + eps)
 
         return divided
 

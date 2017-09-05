@@ -5,11 +5,10 @@ from ops import *
 import os
 from PIL import Image
 
-learning_rate = 1E-4
+
+learning_rate = 5E-4
 momentum = 0.001
-
 batch_size = 1
-
 num_threads = 1
 
 
@@ -18,14 +17,11 @@ def main():
 #    with tf.name_scope('load_data'):
     input, target = load_data()
 
-    tf.summary.histogram(name='source_histo', values=input)
-    tf.summary.histogram(name='target_histo', values=target)
-
     model = create_graph(input)
 
     tf.summary.histogram(name='model_histo', values=model)
 
-    run(model, target, input)
+    run(model, target, input, False)
 
     # TODO
     save()
@@ -72,92 +68,134 @@ def load_data():
 
 
 def create_graph(input):
-    a = pconv(input, 1, 1, 5, name="Main_Graph")
+    a = sconv(input, 1, 1, 5, name="Main_Graph")
     return a
 
 
-def run(output, target, input):
-    global_step = tf.Variable(0, trainable=False)
+def run(output, target, input, restore):
+    saver = tf.train.Saver()
 
-    with tf.name_scope('learning_rate'):
-        starter_learning_rate = learning_rate
-        learning_rate_ = tf.train.exponential_decay(starter_learning_rate, global_step,
-                                                    1000, 0.96, staircase=True,name='decay_learning_rate')  # 97
+    if (restore == False):
+        global_step = tf.Variable(0, trainable=False)
 
-    tf.summary.scalar(name='decay_learning_rate', tensor=learning_rate_)
+        with tf.name_scope('learning_rate'):
+            starter_learning_rate = learning_rate
+            learning_rate_ = tf.train.exponential_decay(starter_learning_rate, global_step,
+                                                        1000, 0.96, staircase=True,name='decay_learning_rate')  # 97
 
-    with tf.name_scope('cost_function'):
-        loss = tf.reduce_mean(tf.squared_difference(output, target,name='sqr_diff'),name='mse')
-        # loss = tf.nn.l2_loss(tf.subtract(output, target))
-        # loss = tf.reduce_mean(tf.abs(target - output))
+        tf.summary.scalar(name='decay_learning_rate', tensor=learning_rate_)
 
-
-    with tf.name_scope('train'):
-        optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate_)
-
-    train = optimizer.minimize(loss, global_step=global_step)
-    #gradient = optimizer.compute_gradients(loss)
-    tf.summary.scalar(name='loss', tensor=loss)
+        with tf.name_scope('cost_function'):
+            loss = tf.reduce_mean(tf.squared_difference(output, target,name='sqr_diff'),name='mse')
+            # loss = tf.nn.l2_loss(tf.subtract(output, target))
+            # loss = tf.reduce_mean(tf.abs(target - output))
 
 
-    init = tf.global_variables_initializer()
+        with tf.name_scope('train'):
+            optimizer = tf.train.AdamOptimizer(learning_rate=learning_rate_)
 
-    with tf.Session() as sess:
+        train = optimizer.minimize(loss, global_step=global_step)
+        #gradient = optimizer.compute_gradients(loss)
+        tf.summary.scalar(name='loss', tensor=loss)
 
-        coord = tf.train.Coordinator()
-        threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
-        sess.run(init)
+        init = tf.global_variables_initializer()
 
-        with tf.variable_scope("Main_Graph", reuse=True):
-            print(sess.run(tf.get_variable("filter")))
-            print(sess.run(tf.get_variable("p")))
-            print(sess.run(loss))
-            pass
+        with tf.Session() as sess:
 
-        for step in range(200):
-            sess.run(train)
+            coord = tf.train.Coordinator()
+            threads = tf.train.start_queue_runners(sess=sess, coord=coord)
 
-            if (step + 1) % 100 == 0:
-                with tf.variable_scope("Main_Graph", reuse=True):
-                    print(sess.run(tf.get_variable("filter")))
-                    print(sess.run(tf.get_variable("p")))
-                    pass
+            sess.run(init)
 
-                l = sess.run(loss)
-                print(step + 1, l)
+            with tf.variable_scope("Main_Graph", reuse=True):
+                print("filter :", sess.run(tf.get_variable("filter")))
+                print("p value : ",sess.run(tf.get_variable("p")))
+                print("loss : ",sess.run(loss))
                 pass
 
+            img_difference = sess.run(target-output)
+            tf.summary.histogram(name='tgt_opt,histo',values=img_difference)
+            tf.summary.histogram(name='source_histo', values=input)
+            tf.summary.histogram(name='target_histo', values=target)
+            tf.summary.histogram(name='output_histo', values=output)
+            merged = tf.summary.merge_all()
+            train_writer = tf.summary.FileWriter(logdir='./board/sample5', graph=sess.graph)
 
-        in_, tar, out = sess.run(
-            [tf.image.convert_image_dtype(input, tf.uint8,name='source_img'),
-            tf.image.convert_image_dtype(target, tf.uint8,name='target_img'),
-            tf.image.convert_image_dtype(output, tf.uint8,name='output_img')])  # 반드시 한번에 돌릴것
+            for step in range(50000):
+                sess.run(train)
 
-        with tf.variable_scope("Main_Graph", reuse=True):
+                if (step) % 1000 == 0:
+                    with tf.variable_scope("Main_Graph", reuse=True):
+                        #filter_summary = \
+                        sess.run(tf.get_variable('filter'))
+                        #p_summary = \
+                        sess.run(tf.get_variable('p'))
+                        #print("filter :" ,filter_summary)
+                        #print("p value:" , p_summary)
+
+                    l = sess.run(loss)
+                    result = sess.run([merged])
+                    train_writer.add_summary(result[0], step)
+                    print("step :",step, l)
+
+
+
+
+            in_, tar, out = sess.run(
+                [tf.image.convert_image_dtype(input, tf.uint8,name='source_img'),
+                tf.image.convert_image_dtype(target, tf.uint8,name='target_img'),
+                tf.image.convert_image_dtype(output, tf.uint8,name='output_img')])  # 반드시 한번에 돌릴것
+
+            with tf.variable_scope("Main_Graph", reuse=True):
+                print("filter : ",sess.run(tf.get_variable("filter")))
+                print("p value : ",sess.run(tf.get_variable("p")))
+
+            print("decay_learning_rate",sess.run(learning_rate_))
+            print("shape",out[0, :, :, :].shape)
+            Image.fromarray(np.repeat(in_[0, :, :, :], 3, 2)).show() #channels = 3
+            Image.fromarray(np.repeat(tar[0, :, :, :], 3, 2)).show()
+            Image.fromarray(np.repeat(out[0, :, :, :], 3, 2)).show()
+
+
+
+            coord.request_stop()
+            coord.join(threads)
+
+
+            #saver.save(sess,'./ckpt/sconv_model',global_step=2000)
+    else:
+        init = tf.global_variables_initializer()
+        with tf.Session() as sess:
+
+            coord = tf.train.Coordinator()
+            threads = tf.train.start_queue_runners(sess=sess, coord=coord)
+
+            sess.run(init)
+
             print(sess.run(tf.get_variable("filter")))
             print(sess.run(tf.get_variable("p")))
-            pass
 
-        print(sess.run(learning_rate_))
-        print(out[0, :, :, :].shape)
-        # Image.fromarray(np.repeat(in_[0, :, :, :], 3, 2)).show() #channels = 3
-        # Image.fromarray(np.repeat(tar[0, :, :, :], 3, 2)).show()
-        # Image.fromarray(np.repeat(out[0, :, :, :], 3, 2)).show()
 
-        tf.summary.histogram('in_', values=in_)
-        tf.summary.histogram('tar', values=tar)
-        tf.summary.histogram('out', values=out)
+            in_, tar, out = sess.run(
+                [tf.image.convert_image_dtype(input, tf.uint8,name='source_img'),
+                tf.image.convert_image_dtype(target, tf.uint8,name='target_img'),
+                tf.image.convert_image_dtype(output, tf.uint8,name='output_img')])  # 반드시 한번에 돌릴것
 
-        merged = tf.summary.merge_all()
-        train_writer = tf.summary.FileWriter(logdir='./board/sample2', graph=sess.graph)
-        result = sess.run([merged])
-        train_writer.add_summary(result[0])
+            with tf.variable_scope("Main_Graph", reuse=True):
+                print(sess.run(tf.get_variable("filter")))
+                print(sess.run(tf.get_variable("p")))
 
-        coord.request_stop()
-        coord.join(threads)
+            print(out[0, :, :, :].shape)
+            Image.fromarray(np.repeat(in_[0, :, :, :], 3, 2)).show() #channels = 3
+            Image.fromarray(np.repeat(tar[0, :, :, :], 3, 2)).show()
+            Image.fromarray(np.repeat(out[0, :, :, :], 3, 2)).show()
 
+
+            coord.request_stop()
+            coord.join(threads)
         return
+
 
 
 def save():
